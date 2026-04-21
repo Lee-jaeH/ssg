@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,78 +6,64 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import koreanize_matplotlib
 
-# 페이지 설정
-st.set_page_config(page_title="KGC 스마트팩토리 예지보전 대시보드", layout="wide")
+# 페이지 제목 및 레이아웃
+st.set_page_config(page_title="KGC 스마트팩토리 예지보전", layout="wide")
 
 @st.cache_data
 def load_data():
-    # 1. 데이터 로드 및 KGC 명칭 매핑
+    # NASA CMAPSS 데이터 로드
     url = "https://raw.githubusercontent.com/jiminxchris/datas/main/CMAPSSData/train_FD001.txt"
     raw_cols = ['id', 'cycle', 'setting1', 'setting2', 'setting3'] + [f's{i}' for i in range(1, 22)]
     df = pd.read_csv(url, sep=r'\s+', header=None, names=raw_cols)
     
-    kgc_col_map = {
-        'id': '설비_ID', 'cycle': '가동_사이클', 'setting1': '공정설정_온도',
-        'setting2': '공정설정_압력', 'setting3': '공정설정_운전모드',
-        's2': '증삼기_내부온도', 's3': '추출기_상단온도', 's4': '건조기_출구온도',
-        's7': '이송펌프_회전속도', 's11': '냉각수_공급압력', 's12': '가열히터_전류값', 's15': '증삼기_내부습도'
+    # KGC 공정 명칭 매핑
+    kgc_map = {
+        'id': '설비_ID', 'cycle': '가동_사이클',
+        's2': '증삼기_내부온도', 's3': '추출기_상단온도', 
+        's4': '건조기_출구온도', 's7': '이송펌프_회전속도', 
+        's11': '냉각수_공급압력', 's12': '가열히터_전류값'
     }
-    
-    selected_cols = list(kgc_col_map.keys())
-    return df[selected_cols].rename(columns=kgc_col_map)
+    return df[list(kgc_map.keys())].rename(columns=kgc_map)
 
-# 데이터 불러오기
-df = load_data()
+# 데이터 준비
+data = load_data()
 
-# 사이드바: 설비 선택
-st.sidebar.header("설비 선택")
-unit_id = st.sidebar.selectbox("모니터링할 설비 ID를 선택하세요", df['설비_ID'].unique())
-unit_df = df[df['설비_ID'] == unit_id]
+# [사이드바] 설비 선택
+st.sidebar.header("🏭 설비 모니터링")
+unit_id = st.sidebar.selectbox("대상 설비 번호", data['설비_ID'].unique())
+unit_df = data[data['설비_ID'] == unit_id]
 
-# 메인 화면
-st.title("🏭 KGC 스마트팩토리 예지보전 시스템")
-st.markdown(f"**{unit_id}번 설비**의 실시간 센서 데이터 및 고장 예측 분석 결과입니다.")
+# [메인 화면]
+st.title("🍄 KGC 인삼 공정 예지보전 시스템")
+st.info(f"현재 {unit_id}번 설비의 가동 상태를 분석 중입니다.")
 
-# 대시보드 레이아웃 (3개 컬럼)
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("현재 가동 사이클", f"{unit_df['가동_사이클'].max()} 회")
-with col2:
-    st.metric("증삼기 평균 온도", f"{unit_df['증삼기_내부온도'].mean():.2f} °C")
-with col3:
-    st.metric("가열히터 평균 전류", f"{unit_df['가열히터_전류값'].mean():.2f} A")
+# 대시보드 지표 (Metrics)
+m1, m2, m3 = st.columns(3)
+with m1:
+    st.metric("현재 사이클", f"{unit_df['가동_사이클'].max()}회")
+with m2:
+    st.metric("증삼기 평균온도", f"{unit_df['증삼기_내부온도'].mean():.1f}°C")
+with m3:
+    st.metric("냉각수 공급압력", f"{unit_df['냉각수_공급압력'].mean():.2f} psi")
 
-# 탭 구성: 시각화 vs AI 분석
-tab1, tab2 = st.tabs(["📈 센서 모니터링", "🤖 AI 고장 분석"])
+# 시각화 탭
+tab1, tab2 = st.tabs(["센서 데이터 추이", "고장 징후 분석"])
 
 with tab1:
-    st.subheader("설비 노후화에 따른 온도 변화 추이")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(unit_df['가동_사이클'], unit_df['증삼기_내부온도'], label='증삼기 온도', color='red')
-    ax.plot(unit_df['가동_사이클'], unit_df['건조기_출구온도'], label='건조기 온도', color='blue')
-    ax.set_xlabel("누적 가동 사이클")
-    ax.set_ylabel("측정 온도(°C)")
-    ax.legend()
-    ax.grid(True)
+    st.subheader("실시간 공정 센서 로그")
+    selected_sensor = st.selectbox("확인할 센서 선택", ['증삼기_내부온도', '추출기_상단온도', '건조기_출구온도'])
+    
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(unit_df['가동_사이클'], unit_df[selected_sensor], color='firebrick', lw=1.5)
+    ax.set_title(f"{unit_id}번 설비 - {selected_sensor} 변화")
+    ax.set_xlabel("가동 시간(Cycle)")
+    ax.set_ylabel("수치")
     st.pyplot(fig)
 
 with tab2:
-    st.subheader("고장 징후 판단 핵심 센서 (AI 분석 결과)")
-    # 코랩의 분석 결과를 바탕으로 한 중요도 시각화 재현
-    # (실제 모델 importance 추출 로직이 코드에 포함되어 있음)
-    st.info("💡 분석 결과: 현재 AI는 '증삼기_내부온도' 수치를 고장의 가장 중요한 지표로 보고 있습니다.")
-    
-    # 예시 중요도 데이터 (코랩 분석 로직 기반)
-    importance_data = pd.DataFrame({
-        '센서명': ['증삼기_내부온도', '추출기_상단온도', '가열히터_전류값', '이송펌프_회전속도', '냉각수_공급압력'],
-        '중요도': [0.85, 0.62, 0.45, 0.30, 0.15]
-    })
-    
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    sns.barplot(x='중요도', y='센서명', data=importance_data, palette='magma', ax=ax2)
-    ax2.set_title("고장 핵심 지표 TOP 5")
+    st.subheader("AI 기반 이상 징후 판단")
+    # 상관관계 히트맵 예시
+    corr = unit_df.corr()
+    fig2, ax2 = plt.subplots(figsize=(8, 6))
+    sns.heatmap(corr, annot=True, cmap='RdYlGn', ax=ax2)
     st.pyplot(fig2)
-
-# 데이터 테이블 표시
-if st.checkbox("전체 로우 데이터 보기"):
-    st.dataframe(df)
